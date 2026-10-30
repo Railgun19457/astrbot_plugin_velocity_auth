@@ -1,0 +1,7 @@
+name: astrbot_plugin_velocity_auth
+display_name: VelocityAuth 验证
+desc: 连接 VelocityAuth 插件的 Bot 通道，群内验证码验证、玩家信息与服务器统计查询
+version: 0.1.0
+author: Railgun19457
+repo: https://github.com/Railgun19457/astrbot_plugin_velocity_auth
+astrbot_version: ">=4.10.4"

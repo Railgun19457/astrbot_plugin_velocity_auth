@@ -1,0 +1,181 @@
+{
+  "servers": {
+    "type": "template_list",
+    "description": "服务器模板列表",
+    "hint": "每个模板对应一个 VelocityAuth 插件实例。",
+    "default": [],
+    "templates": {
+      "server": {
+        "name": "服务器模板",
+        "hint": "一个 VelocityAuth 插件实例的连接与群组配置。",
+        "display_item": "name",
+        "hide_hint_in_list": true,
+        "items": {
+          "name": {
+            "description": "服务器名称",
+            "hint": "用于指令里选择服务器，需唯一。",
+            "type": "string",
+            "default": "默认服务器"
+          },
+          "enabled": {
+            "description": "启用此服务器",
+            "hint": "关闭后不会建立连接。",
+            "type": "bool",
+            "default": true
+          },
+          "host": {
+            "description": "服务器地址",
+            "hint": "VelocityAuth 配置 bot.listen 对应的可访问地址。",
+            "type": "string",
+            "default": "127.0.0.1"
+          },
+          "port": {
+            "description": "服务端端口",
+            "hint": "对应 VelocityAuth 配置 bot.port，默认 8765。",
+            "type": "int",
+            "default": 8765
+          },
+          "client_id": {
+            "description": "bot 实例标识",
+            "hint": "形如 astrbot-1；同一 server_key_id 下应保持稳定。",
+            "type": "string",
+            "default": "astrbot-1"
+          },
+          "client_key_id": {
+            "description": "bot 密钥标识",
+            "hint": "服务端按此标识 pin 住 bot 公钥。改动会导致需要重新配对。",
+            "type": "string",
+            "default": "astrbot-k1"
+          },
+          "provider": {
+            "description": "渠道 id",
+            "hint": "对应 VelocityAuth 配置里 binding.social 下的渠道 id（如 qq）。验证码只发给该渠道的会话。",
+            "type": "string",
+            "default": "qq"
+          },
+          "pairing_id": {
+            "description": "首次配对 ID",
+            "hint": "服主执行 /velocityauth pair new 输出的 pairing_id。已建立信任后可留空。",
+            "type": "string",
+            "default": ""
+          },
+          "pairing_code": {
+            "description": "首次配对码",
+            "hint": "敏感值：与 pairing_id 成对使用。配对成功后插件会自动清空该字段，无需手动处理。",
+            "type": "string",
+            "default": ""
+          },
+          "verify_umos": {
+            "description": "验证会话 UMO 列表",
+            "hint": "监听这些会话的消息，命中待验证码时上报服务端。例如 aiocqhttp:GroupMessage:123456。注意：AstrBot 只会把「唤醒」了机器人的消息交给插件，因此玩家需要 @机器人 或在消息前加唤醒词。",
+            "type": "list",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "admin_umos": {
+            "description": "管理会话 UMO 列表",
+            "hint": "仅这些会话可以使用管理指令（查询玩家、统计等）。例如 aiocqhttp:FriendMessage:10001。",
+            "type": "list",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "match_mode": {
+            "description": "验证码匹配方式",
+            "hint": "contains：消息中出现该验证码即视为命中；exact：整条消息必须就是该验证码。",
+            "type": "string",
+            "options": ["contains", "exact"],
+            "default": "contains"
+          },
+          "success_text": {
+            "description": "验证成功提示",
+            "hint": "服务端确认消费验证码后在验证会话内发送。{name} 昵称、{subject} 平台账号、{code} 验证码、{server} 模板名。留空则不发送。",
+            "type": "string",
+            "default": "✅ 验证成功，请在游戏内继续操作。"
+          },
+          "failed_text": {
+            "description": "验证失败提示",
+            "hint": "服务端未消费验证码时发送。留空则不发送。",
+            "type": "string",
+            "default": "❌ 验证码无效或已过期。"
+          }
+        }
+      }
+    }
+  },
+  "render": {
+    "description": "图片渲染与字体",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "查询结果渲染为图片",
+        "hint": "关闭或渲染失败时自动降级为文本发送。",
+        "type": "bool",
+        "default": true
+      },
+      "font_paths": {
+        "description": "中文字体目录",
+        "hint": "供 Typst 渲染使用。留空则自动探测系统字体（Windows 微软雅黑 / Linux Noto CJK 等），仍找不到时尝试下载。",
+        "type": "list",
+        "items": {
+          "type": "string"
+        },
+        "default": []
+      },
+      "auto_download_font": {
+        "description": "允许自动下载中文字体",
+        "hint": "自动探测失败时下载文泉驿微米黑到插件数据目录。",
+        "type": "bool",
+        "default": true
+      }
+    }
+  },
+  "connect": {
+    "description": "连接与心跳",
+    "type": "object",
+    "items": {
+      "reconnect_initial_seconds": {
+        "description": "初始重连间隔（秒）",
+        "type": "int",
+        "default": 3
+      },
+      "reconnect_max_seconds": {
+        "description": "最大重连间隔（秒）",
+        "type": "int",
+        "default": 300
+      },
+      "heartbeat_seconds": {
+        "description": "心跳间隔（秒）",
+        "hint": "应用层 ping/pong，保持长连接活跃；0 表示关闭。",
+        "type": "int",
+        "default": 30
+      },
+      "request_timeout_seconds": {
+        "description": "查询超时（秒）",
+        "type": "int",
+        "default": 15
+      }
+    }
+  },
+  "command": {
+    "description": "管理指令",
+    "type": "object",
+    "items": {
+      "require_astrbot_admin": {
+        "description": "同时要求 AstrBot 管理员权限",
+        "hint": "开启后：除了会话在“管理会话 UMO 列表”内，还需要发送者是 AstrBot 管理员。",
+        "type": "bool",
+        "default": false
+      },
+      "max_list_rows": {
+        "description": "列表最多展示行数",
+        "hint": "登录历史、绑定历史、反查结果等的展示上限（服务端 limit 另由插件配置控制）。",
+        "type": "int",
+        "default": 20
+      }
+    }
+  }
+}
