@@ -266,7 +266,6 @@ class TypstRenderer:
             {"label": "最近登录", "value": account.last_login_text},
             {"label": "最近 IP", "value": account.last_ip or "-"},
             {"label": "上次所在服", "value": account.last_server or "-"},
-            {"label": "正版 UUID", "value": account.premium_uuid or "-"},
         ]
         sections: list[dict] = [{"title": "账号信息", "rows": rows}]
 

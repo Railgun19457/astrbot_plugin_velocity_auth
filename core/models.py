@@ -136,7 +136,6 @@ class AccountView:
     name: str = ""
     uuid: str = ""
     status: str = ""
-    premium_uuid: str = ""
     last_server: str = ""
     last_ip: str = ""
     created_at: int = 0
@@ -279,7 +278,6 @@ def parse_account(payload: dict[str, Any]) -> AccountView:
         name=text.get("name", ""),
         uuid=text.get("uuid", ""),
         status=text.get("status", ""),
-        premium_uuid=text.get("premium_uuid", ""),
         last_server=text.get("last_server", ""),
         last_ip=text.get("last_ip", ""),
         created_at=as_int("created_at"),

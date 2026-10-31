@@ -1,5 +1,13 @@
 # 更新日志
 
+## v0.1.1
+
+适配 VelocityAuth 0.2.0+。
+
+- 移除 `premium_uuid` 字段：服务端已删除正版分支与 `premium_uuid` 列，
+  账号卡片不再显示「正版 UUID」一行
+- `query.account` 解析对旧版服务端保持兼容：响应里若仍带 `premium_uuid` 会被忽略，不报错
+
 ## v0.1.0
 
 初始实现。
