@@ -22,15 +22,26 @@ from .client import ClientHooks, QueryError, VelocityAuthClient
 from .config import PluginSettings
 from .models import (
     QUERY_TYPE_ACCOUNT,
+    QUERY_TYPE_ACCOUNTS_LIST,
+    QUERY_TYPE_AUDIT_LIST,
     QUERY_TYPE_LOOKUP,
+    QUERY_TYPE_SESSIONS_LIST,
     QUERY_TYPE_STATS,
+    AccountPage,
     AccountView,
+    ActivityView,
+    AuditPage,
     LookupView,
     PendingCode,
     ServerTemplate,
+    SessionPage,
     StatsView,
     parse_account,
+    parse_accounts_page,
+    parse_activity,
+    parse_audit_page,
     parse_lookup,
+    parse_sessions_page,
     parse_stats,
 )
 from .state import StateStore
@@ -374,6 +385,189 @@ class ServerManager(ClientHooks):
     async def stats(self, runtime: ServerRuntime) -> StatsView:
         raw = await self.query(runtime, QUERY_TYPE_STATS, {})
         return parse_stats(raw)
+
+    async def stats_with_activity(
+        self, runtime: ServerRuntime, range_days: int = 30
+    ) -> tuple[StatsView, ActivityView]:
+        """仪表盘用：一次 ``query.stats`` 同时拿到聚合与活跃度趋势。"""
+        raw = await self.query(
+            runtime, QUERY_TYPE_STATS, {"range": max(0, min(90, range_days))}
+        )
+        return parse_stats(raw), parse_activity(raw)
+
+    async def accounts(
+        self,
+        runtime: ServerRuntime,
+        *,
+        keyword: str = "",
+        status: str = "",
+        provider: str = "",
+        online_only: bool = False,
+        page: int = 1,
+        page_size: int = 20,
+        sort: str = "",
+    ) -> AccountPage:
+        payload: dict[str, Any] = {"page": max(1, page), "limit": max(1, page_size)}
+        if keyword:
+            payload["keyword"] = keyword
+        if status:
+            payload["status"] = status
+        if provider:
+            payload["provider"] = provider
+        if online_only:
+            payload["online"] = "true"
+        if sort:
+            payload["sort"] = sort
+        raw = await self.query(runtime, QUERY_TYPE_ACCOUNTS_LIST, payload)
+        return parse_accounts_page(raw)
+
+    async def sessions(
+        self, runtime: ServerRuntime, *, page: int = 1, page_size: int = 20
+    ) -> SessionPage:
+        raw = await self.query(
+            runtime,
+            QUERY_TYPE_SESSIONS_LIST,
+            {"page": max(1, page), "limit": max(1, page_size)},
+        )
+        return parse_sessions_page(raw)
+
+    async def audit(
+        self,
+        runtime: ServerRuntime,
+        *,
+        account_id: int | None = None,
+        action: str = "",
+        actor: str = "",
+        source: str = "",
+        since: int = 0,
+        until: int = 0,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> AuditPage:
+        payload: dict[str, Any] = {"page": max(1, page), "limit": max(1, page_size)}
+        if account_id:
+            payload["account_id"] = account_id
+        if action:
+            payload["action"] = action
+        if actor:
+            payload["actor"] = actor
+        if source:
+            payload["source"] = source
+        if since > 0:
+            payload["since"] = since
+        if until > 0:
+            payload["until"] = until
+        raw = await self.query(runtime, QUERY_TYPE_AUDIT_LIST, payload)
+        return parse_audit_page(raw)
+
+    # ------------------------------------------------------------------ 管理写操作
+
+    async def admin_call(
+        self,
+        runtime: ServerRuntime,
+        message_type: str,
+        payload: dict[str, Any],
+        *,
+        actor: str = "",
+    ) -> dict[str, str]:
+        """发送 ``admin.*`` 写操作；返回响应载荷（值均为字符串）。"""
+        if not runtime.client.ready:
+            raise QueryError(
+                "not_ready",
+                f"模板 {runtime.name} 尚未建立会话"
+                + (f"（{runtime.last_error}）" if runtime.last_error else ""),
+            )
+        params = dict(payload)
+        if actor:
+            params["actor"] = actor
+        response = await runtime.client.send_admin(message_type, params)
+        return dict(response.payload)
+
+    async def set_account_status(
+        self, runtime: ServerRuntime, *, account_id: int = 0, name: str = "", status: str = "", actor: str = ""
+    ) -> dict[str, str]:
+        payload: dict[str, Any] = {"status": status}
+        if account_id:
+            payload["id"] = account_id
+        elif name:
+            payload["name"] = name
+        return await self.admin_call(
+            runtime, "admin.account.set-status", payload, actor=actor
+        )
+
+    async def reset_account_password(
+        self, runtime: ServerRuntime, *, account_id: int = 0, name: str = "", password: str = "", actor: str = ""
+    ) -> dict[str, str]:
+        payload: dict[str, Any] = {"password": password}
+        if account_id:
+            payload["id"] = account_id
+        elif name:
+            payload["name"] = name
+        return await self.admin_call(
+            runtime, "admin.account.reset-password", payload, actor=actor
+        )
+
+    async def delete_account(
+        self,
+        runtime: ServerRuntime,
+        *,
+        account_id: int = 0,
+        name: str = "",
+        confirm_name: str,
+        actor: str = "",
+    ) -> dict[str, str]:
+        payload: dict[str, Any] = {"confirm_name": confirm_name}
+        if account_id:
+            payload["id"] = account_id
+        elif name:
+            payload["name"] = name
+        return await self.admin_call(runtime, "admin.account.delete", payload, actor=actor)
+
+    async def kick_account(
+        self,
+        runtime: ServerRuntime,
+        *,
+        account_id: int = 0,
+        name: str = "",
+        reason: str = "",
+        actor: str = "",
+    ) -> dict[str, str]:
+        payload: dict[str, Any] = {}
+        if account_id:
+            payload["id"] = account_id
+        elif name:
+            payload["name"] = name
+        if reason:
+            payload["reason"] = reason
+        return await self.admin_call(runtime, "admin.account.kick", payload, actor=actor)
+
+    async def clear_account_sessions(
+        self, runtime: ServerRuntime, *, account_id: int = 0, name: str = "", actor: str = ""
+    ) -> dict[str, str]:
+        payload: dict[str, Any] = {}
+        if account_id:
+            payload["id"] = account_id
+        elif name:
+            payload["name"] = name
+        return await self.admin_call(
+            runtime, "admin.account.clear-session", payload, actor=actor
+        )
+
+    async def remove_binding(
+        self,
+        runtime: ServerRuntime,
+        *,
+        account_id: int = 0,
+        name: str = "",
+        provider: str,
+        actor: str = "",
+    ) -> dict[str, str]:
+        payload: dict[str, Any] = {"provider": provider}
+        if account_id:
+            payload["id"] = account_id
+        elif name:
+            payload["name"] = name
+        return await self.admin_call(runtime, "admin.binding.remove", payload, actor=actor)
 
     # ------------------------------------------------------------------ ClientHooks
 

@@ -27,6 +27,7 @@ from .core.client import QueryError
 from .core.config import PluginSettings, load_settings
 from .core.manager import ServerManager, ServerRuntime
 from .core.models import PendingCode, ServerTemplate
+from .core.page import VelocityAuthPageAPI
 from .core.render import TypstRenderer
 from .core.state import StateStore
 
@@ -40,6 +41,18 @@ QUERY_USAGE = (
 )
 
 
+def _read_plugin_version() -> str:
+    """读取同目录 metadata.yaml 里的版本号（失败返回空串）。"""
+    path = Path(__file__).parent / "metadata.yaml"
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version:"):
+                return line.partition(":")[2].strip()
+    except OSError:
+        pass
+    return ""
+
+
 class VelocityAuthPlugin(Star):
     """连接 VelocityAuth 插件并处理群内验证与查询。"""
 
@@ -50,6 +63,7 @@ class VelocityAuthPlugin(Star):
         self.settings: PluginSettings = load_settings(self.raw_config)
         self.data_dir = StarTools.get_data_dir(PLUGIN_NAME)
         self.temp_dir = Path(get_astrbot_temp_path()) / PLUGIN_NAME
+        self.plugin_version = _read_plugin_version()
         self.store = StateStore(self.data_dir / "servers.json")
         self.renderer = TypstRenderer(
             template_dir=Path(__file__).parent / "templates",
@@ -65,6 +79,9 @@ class VelocityAuthPlugin(Star):
         )
         self._started = False
         self._restart_task: asyncio.Task[None] | None = None
+        # WebUI 管理页后端（进入 WebUI 本身已认证，这里不再做登录）
+        self.page_api = VelocityAuthPageAPI(self)
+        self.page_api.register()
 
     # ------------------------------------------------------------------ 生命周期
 

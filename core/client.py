@@ -33,6 +33,7 @@ from .crypto import (
 )
 from .models import ServerTemplate
 from .protocol import (
+    CAPABILITY_ADMIN,
     CAPABILITY_QUERY,
     CAPABILITY_VERIFY,
     VERSION,
@@ -164,6 +165,10 @@ class VelocityAuthClient:
     @property
     def supports_query(self) -> bool:
         return CAPABILITY_QUERY in self.server_capabilities
+
+    @property
+    def supports_admin(self) -> bool:
+        return CAPABILITY_ADMIN in self.server_capabilities
 
     @property
     def close_reason(self) -> str:
@@ -605,7 +610,7 @@ class VelocityAuthClient:
         return os.urandom(size)
 
     def _capabilities(self) -> list[str]:
-        return [CAPABILITY_VERIFY, CAPABILITY_QUERY]
+        return [CAPABILITY_VERIFY, CAPABILITY_QUERY, CAPABILITY_ADMIN]
 
     async def _send_json(self, frame: dict[str, Any]) -> None:
         ws = self._ws
@@ -735,6 +740,24 @@ class VelocityAuthClient:
                 "query_disabled",
                 f"服务端未启用查询接口（capabilities={','.join(self.server_capabilities) or '-'}）",
             )
+        return await self._request(message_type, payload, timeout)
+
+    async def send_admin(
+        self, message_type: str, payload: dict[str, Any] | None = None, timeout: float | None = None
+    ) -> ParsedMessage:
+        """发送 admin.* 写操作；错误码由服务端决定（admin_disabled / confirm_required 等）。"""
+        if not self.ready:
+            raise QueryError("not_ready", f"模板 {self.template.name} 尚未建立会话")
+        if not self.supports_admin:
+            raise QueryError(
+                "admin_disabled",
+                "服务端未启用管理接口（VelocityAuth 需设置 bot.admin.enabled=true）",
+            )
+        return await self._request(message_type, payload, timeout)
+
+    async def _request(
+        self, message_type: str, payload: dict[str, Any] | None, timeout: float | None
+    ) -> ParsedMessage:
         request_id = await self._send_sealed(message_type, payload or {})
         future: asyncio.Future[ParsedMessage] = asyncio.get_running_loop().create_future()
         self._pending[request_id] = future
@@ -744,4 +767,4 @@ class VelocityAuthClient:
             )
         except asyncio.TimeoutError as exc:
             self._pending.pop(request_id, None)
-            raise QueryError("timeout", f"查询超时：{message_type}") from exc
+            raise QueryError("timeout", f"请求超时：{message_type}") from exc

@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "display_name": "VelocityAuth Verification",
+    "short_desc": "In-group verification, account lookup and admin dashboard",
+    "desc": "Connects to the VelocityAuth bot channel: in-group code verification, account and stats lookup, plus a WebUI account admin dashboard."
+  },
+  "pages": {
+    "dashboard": {
+      "title": "VelocityAuth Admin",
+      "refresh": "Refresh",
+      "search": "Search",
+      "nav": {
+        "overview": "Overview",
+        "accounts": "Accounts",
+        "audit": "Audit Log"
+      },
+      "overview": {
+        "statsTitle": "Server Overview",
+        "accountsTotal": "Total Accounts",
+        "online": "Online Now",
+        "dau": "DAU (24h)",
+        "logins24h": "Logins (24h)",
+        "dailyTrend": "Daily Activity",
+        "statusChart": "Account Status",
+        "bindingChart": "Bindings",
+        "loginChart": "Successful Logins",
+        "registerChart": "Registrations",
+        "noData": "No data"
+      },
+      "accounts": {
+        "title": "Accounts",
+        "search": "Search name / UUID / IP / binding",
+        "empty": "No matching accounts"
+      },
+      "audit": {
+        "title": "Audit Log"
+      }
+    }
+  }
+}

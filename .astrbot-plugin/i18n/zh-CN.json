@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "display_name": "VelocityAuth 验证",
+    "short_desc": "群内验证、账号查询与账号管理后台",
+    "desc": "连接 VelocityAuth 的 Bot 通道：群内验证码验证、账号信息与统计查询，并提供 WebUI 账号管理后台。"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "VelocityAuth 管理台",
+      "refresh": "刷新",
+      "search": "搜索",
+      "nav": {
+        "overview": "仪表盘",
+        "accounts": "账号管理",
+        "audit": "审计日志"
+      },
+      "overview": {
+        "statsTitle": "服务器概览",
+        "accountsTotal": "账号总数",
+        "online": "当前在线",
+        "dau": "日活（24h）",
+        "logins24h": "近 24h 登录",
+        "dailyTrend": "每日活跃趋势",
+        "statusChart": "账号状态",
+        "bindingChart": "渠道绑定",
+        "loginChart": "成功登录",
+        "registerChart": "注册数",
+        "noData": "暂无统计数据"
+      },
+      "accounts": {
+        "title": "账号管理",
+        "search": "搜索账号名 / UUID / IP / 绑定",
+        "empty": "没有匹配的账号"
+      },
+      "audit": {
+        "title": "审计日志"
+      }
+    }
+  }
+}

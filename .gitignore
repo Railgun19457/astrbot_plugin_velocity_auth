@@ -4,3 +4,7 @@ core/__pycache__/
 *.pyc
 temp/
 .ruff_cache/
+
+# 前端源码的依赖与构建中间产物（pages/dashboard 里的构建结果要提交）
+frontend/node_modules/
+frontend/package-lock.json

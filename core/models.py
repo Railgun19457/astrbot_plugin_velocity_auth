@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
 QUERY_TYPE_ACCOUNT = "query.account"
 QUERY_TYPE_LOOKUP = "query.lookup"
 QUERY_TYPE_STATS = "query.stats"
+QUERY_TYPE_ACCOUNTS_LIST = "query.accounts.list"
+QUERY_TYPE_SESSIONS_LIST = "query.sessions.list"
+QUERY_TYPE_AUDIT_LIST = "query.audit.list"
 
 STATUS_LABELS = {
     "active": "正常",
@@ -306,5 +310,231 @@ def parse_lookup(payload: dict[str, Any]) -> LookupView:
 def parse_stats(payload: dict[str, Any]) -> StatsView:
     return StatsView(
         raw={key: ("" if value is None else str(value)) for key, value in payload.items()}
+    )
+
+
+# ---------------------------------------------------------------------- 管理端视图
+
+
+@dataclass(slots=True)
+class AccountRow:
+    """``query.accounts.list`` 的一行。"""
+
+    id: int = 0
+    name: str = ""
+    uuid: str = ""
+    status: str = ""
+    last_server: str = ""
+    created_at: int = 0
+    last_login_at: int = 0
+    last_ip: str = ""
+    bindings: str = ""
+    online: bool = False
+
+    @property
+    def status_label(self) -> str:
+        return STATUS_LABELS.get(self.status, self.status or "-")
+
+    @property
+    def created_text(self) -> str:
+        return format_time(self.created_at)
+
+    @property
+    def last_login_text(self) -> str:
+        return format_time(self.last_login_at)
+
+    @property
+    def binding_items(self) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for chunk in split_joined(self.bindings, ";"):
+            provider, _, identifier = chunk.partition(":")
+            if provider:
+                out.append((provider, identifier))
+        return out
+
+
+@dataclass(slots=True)
+class AccountPage:
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    rows: list[AccountRow] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SessionRow:
+    account_id: int = 0
+    account: str = ""
+    connection: str = ""
+    ip: str = ""
+    authenticated_at: int = 0
+
+    @property
+    def authenticated_text(self) -> str:
+        return format_time(self.authenticated_at)
+
+
+@dataclass(slots=True)
+class SessionPage:
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    rows: list[SessionRow] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AuditRow:
+    id: int = 0
+    at: int = 0
+    account_id: int = 0
+    account: str = ""
+    action: str = ""
+    ip: str = ""
+    detail: str = ""
+    actor: str = ""
+    source: str = ""
+    client_id: str = ""
+
+    @property
+    def at_text(self) -> str:
+        return format_time(self.at)
+
+
+@dataclass(slots=True)
+class AuditPage:
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    rows: list[AuditRow] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class TrendPoint:
+    date: str = ""
+    logins: int = 0
+    accounts: int = 0
+
+
+@dataclass(slots=True)
+class ActivityView:
+    """``query.stats`` 的活跃度部分。"""
+
+    dau: int = 0
+    wau: int = 0
+    mau: int = 0
+    trend: list[TrendPoint] = field(default_factory=list)
+
+
+def _decode_data(payload: dict[str, Any], key: str = "data") -> list[dict[str, Any]]:
+    """把 ``data`` 字段里的紧凑 JSON 数组解析回对象列表。"""
+    raw = payload.get(key)
+    if raw is None:
+        return []
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return []
+    if isinstance(parsed, list):
+        return [item for item in parsed if isinstance(item, dict)]
+    if isinstance(parsed, dict):
+        return [parsed]
+    return []
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"true", "1", "yes"}
+
+
+def parse_accounts_page(payload: dict[str, Any]) -> AccountPage:
+    rows = [
+        AccountRow(
+            id=_as_int(item.get("id")),
+            name=str(item.get("name") or ""),
+            uuid=str(item.get("uuid") or ""),
+            status=str(item.get("status") or ""),
+            last_server=str(item.get("last_server") or ""),
+            created_at=_as_int(item.get("created_at")),
+            last_login_at=_as_int(item.get("last_login_at")),
+            last_ip=str(item.get("last_ip") or ""),
+            bindings=str(item.get("bindings") or ""),
+            online=_as_bool(item.get("online")),
+        )
+        for item in _decode_data(payload)
+    ]
+    return AccountPage(
+        total=_as_int(payload.get("total")),
+        page=_as_int(payload.get("page"), 1),
+        page_size=_as_int(payload.get("page_size"), 20),
+        rows=rows,
+    )
+
+
+def parse_sessions_page(payload: dict[str, Any]) -> SessionPage:
+    rows = [
+        SessionRow(
+            account_id=_as_int(item.get("account_id")),
+            account=str(item.get("account") or ""),
+            connection=str(item.get("connection") or ""),
+            ip=str(item.get("ip") or ""),
+            authenticated_at=_as_int(item.get("authenticated_at")),
+        )
+        for item in _decode_data(payload)
+    ]
+    return SessionPage(
+        total=_as_int(payload.get("total")),
+        page=_as_int(payload.get("page"), 1),
+        page_size=_as_int(payload.get("page_size"), 20),
+        rows=rows,
+    )
+
+
+def parse_audit_page(payload: dict[str, Any]) -> AuditPage:
+    rows = [
+        AuditRow(
+            id=_as_int(item.get("id")),
+            at=_as_int(item.get("at")),
+            account_id=_as_int(item.get("account_id")),
+            account=str(item.get("account") or ""),
+            action=str(item.get("action") or ""),
+            ip=str(item.get("ip") or ""),
+            detail=str(item.get("detail") or ""),
+            actor=str(item.get("actor") or ""),
+            source=str(item.get("source") or ""),
+            client_id=str(item.get("client_id") or ""),
+        )
+        for item in _decode_data(payload)
+    ]
+    return AuditPage(
+        total=_as_int(payload.get("total")),
+        page=_as_int(payload.get("page"), 1),
+        page_size=_as_int(payload.get("page_size"), 20),
+        rows=rows,
+    )
+
+
+def parse_activity(payload: dict[str, Any]) -> ActivityView:
+    trend: list[TrendPoint] = []
+    for item in _decode_data(payload, "trend"):
+        trend.append(
+            TrendPoint(
+                date=str(item.get("date") or ""),
+                logins=_as_int(item.get("logins")),
+                accounts=_as_int(item.get("accounts")),
+            )
+        )
+    return ActivityView(
+        dau=_as_int(payload.get("dau")),
+        wau=_as_int(payload.get("wau")),
+        mau=_as_int(payload.get("mau")),
+        trend=trend,
     )
 
