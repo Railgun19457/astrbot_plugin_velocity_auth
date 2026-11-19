@@ -88,7 +88,7 @@
               {{ loading ? "加载中…" : t("accounts.empty", "没有匹配的账号") }}
             </td>
           </tr>
-          <tr v-for="account in accounts" :key="account.id">
+          <tr v-for="account in accounts" :key="account.uuid || account.id || account.name">
             <td>
               <div class="d-flex align-center ga-2">
                 <v-icon
@@ -155,8 +155,7 @@
       :server="server"
       :account-key="detailKey"
       :can-admin="canAdmin"
-      @changed="onChanged"
-      @error="(message) => emit('error', message)"
+      @changed="emit('refresh')"
       @toast="(message) => emit('toast', message)"
     />
   </div>
@@ -164,7 +163,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
-import { apiGet, accountKey } from "../api";
+import { apiGet } from "../api";
 import { t } from "../i18n";
 import AccountDetailDialog from "../components/AccountDetailDialog.vue";
 
@@ -182,6 +181,7 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
+let requestId = 0;
 
 const detailOpen = ref(false);
 const detailKey = ref("");
@@ -213,6 +213,7 @@ function statusColor(status) {
 }
 
 async function load() {
+  const currentRequest = ++requestId;
   loading.value = true;
   try {
     const result = await apiGet("page/accounts", {
@@ -222,14 +223,22 @@ async function load() {
       online: filters.online ? "true" : "",
       sort: filters.sort || "",
       page: page.value,
-      limit: pageSize.value,
+      limit: 20,
     });
-    accounts.value = result.accounts || [];
+    if (currentRequest !== requestId) return;
     total.value = result.total || 0;
+    pageSize.value = result.page_size > 0 ? result.page_size : 20;
+    page.value = result.page || page.value;
+    if (page.value > totalPages.value) {
+      page.value = totalPages.value;
+      await load();
+      return;
+    }
+    accounts.value = result.accounts || [];
   } catch (error) {
-    emit("error", error?.message || "加载账号列表失败");
+    if (currentRequest === requestId) emit("error", error?.message || "加载账号列表失败");
   } finally {
-    loading.value = false;
+    if (currentRequest === requestId) loading.value = false;
   }
 }
 
@@ -239,23 +248,11 @@ function search() {
 }
 
 function openDetail(account) {
-  detailKey.value = accountKey(account);
+  detailKey.value = account.uuid ? `uuid:${account.uuid}` : `name:${account.name}`;
   detailOpen.value = true;
 }
 
-function onChanged() {
-  load();
-  emit("refresh");
-}
-
-watch(
-  () => [props.server, props.refreshKey],
-  () => {
-    page.value = 1;
-    load();
-  },
-  { immediate: true },
-);
+watch(() => props.refreshKey, load, { immediate: true });
 </script>
 
 <style scoped>

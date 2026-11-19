@@ -145,6 +145,7 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
+let requestId = 0;
 
 const actionOptions = [
   { title: "注册", value: "register" },
@@ -202,6 +203,7 @@ function actionColor(action) {
 }
 
 async function load() {
+  const currentRequest = ++requestId;
   loading.value = true;
   try {
     const result = await apiGet("page/audit", {
@@ -211,14 +213,22 @@ async function load() {
       actor: filters.actor || "",
       since: filters.since || 0,
       page: page.value,
-      limit: pageSize.value,
+      limit: 20,
     });
-    entries.value = result.entries || [];
+    if (currentRequest !== requestId) return;
     total.value = result.total || 0;
+    pageSize.value = result.page_size > 0 ? result.page_size : 20;
+    page.value = result.page || page.value;
+    if (page.value > totalPages.value) {
+      page.value = totalPages.value;
+      await load();
+      return;
+    }
+    entries.value = result.entries || [];
   } catch (error) {
-    emit("error", error?.message || "加载审计日志失败");
+    if (currentRequest === requestId) emit("error", error?.message || "加载审计日志失败");
   } finally {
-    loading.value = false;
+    if (currentRequest === requestId) loading.value = false;
   }
 }
 
@@ -227,14 +237,7 @@ function search() {
   load();
 }
 
-watch(
-  () => [props.server, props.refreshKey],
-  () => {
-    page.value = 1;
-    load();
-  },
-  { immediate: true },
-);
+watch(() => props.refreshKey, load, { immediate: true });
 </script>
 
 <style scoped>

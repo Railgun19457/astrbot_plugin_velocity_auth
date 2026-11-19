@@ -31,52 +31,56 @@ class VelocityAuthPageAPI:
             ("/page/state", self.page_state, ["GET"], "VelocityAuth Page state"),
             ("/page/servers", self.page_servers, ["GET"], "VelocityAuth Page servers"),
             ("/page/stats", self.page_stats, ["GET"], "VelocityAuth Page statistics"),
-            ("/page/accounts", self.page_accounts, ["GET"], "VelocityAuth Page accounts"),
+            (
+                "/page/accounts",
+                self.page_accounts,
+                ["GET"],
+                "VelocityAuth Page accounts",
+            ),
+            (
+                "/page/account",
+                self.page_account_detail,
+                ["GET"],
+                "VelocityAuth Page account detail",
+            ),
             (
                 "/page/accounts/<account_key>",
                 self.page_account_detail,
                 ["GET"],
                 "VelocityAuth Page account detail",
             ),
-            ("/page/sessions", self.page_sessions, ["GET"], "VelocityAuth Page sessions"),
+            (
+                "/page/sessions",
+                self.page_sessions,
+                ["GET"],
+                "VelocityAuth Page sessions",
+            ),
             ("/page/audit", self.page_audit, ["GET"], "VelocityAuth Page audit log"),
+        ]
+        actions = [
+            ("status", self.page_set_status, "Lock or unlock an account"),
+            ("password", self.page_reset_password, "Reset an account password"),
+            ("kick", self.page_kick, "Kick an account's sessions"),
             (
-                "/page/accounts/<account_key>/status",
-                self.page_set_status,
-                ["POST"],
-                "Lock or unlock an account",
-            ),
-            (
-                "/page/accounts/<account_key>/password",
-                self.page_reset_password,
-                ["POST"],
-                "Reset an account password",
-            ),
-            (
-                "/page/accounts/<account_key>/kick",
-                self.page_kick,
-                ["POST"],
-                "Kick an account's sessions",
-            ),
-            (
-                "/page/accounts/<account_key>/clear-session",
+                "clear-session",
                 self.page_clear_session,
-                ["POST"],
                 "Clear an account's remembered sessions",
             ),
-            (
-                "/page/accounts/<account_key>/bindings/<provider>",
-                self.page_remove_binding,
-                ["POST"],
-                "Unbind a provider from an account",
-            ),
-            (
-                "/page/accounts/<account_key>/delete",
-                self.page_delete_account,
-                ["POST"],
-                "Delete an account",
-            ),
+            ("bindings", self.page_remove_binding, "Unbind a provider from an account"),
+            ("delete", self.page_delete_account, "Delete an account"),
         ]
+        # The View sends identifiers in JSON. Retain path-based routes for existing callers.
+        for action, handler, description in actions:
+            routes.append((f"/page/account/{action}", handler, ["POST"], description))
+            legacy_action = "bindings/<provider>" if action == "bindings" else action
+            routes.append(
+                (
+                    f"/page/accounts/<account_key>/{legacy_action}",
+                    handler,
+                    ["POST"],
+                    description,
+                )
+            )
         for route, handler, methods, description in routes:
             self.plugin.context.register_web_api(
                 f"/{PLUGIN_NAME}{route}",
@@ -240,11 +244,11 @@ class VelocityAuthPageAPI:
             }
         )
 
-    async def page_account_detail(self, account_key: str):
+    async def page_account_detail(self, account_key: str = ""):
         runtime, error = self._resolve(self._query("server"))
         if runtime is None:
             return error_response(error, status_code=400)
-        by, value = self._split_account_key(account_key)
+        by, value = self._split_account_key(account_key or self._query("account_key"))
         if not value:
             return error_response("账号标识为空", status_code=400)
         try:
@@ -372,27 +376,35 @@ class VelocityAuthPageAPI:
         actor = str(body.get("actor") or "").strip()
         return actor or "astrbot-webui"
 
-    async def _target(self, account_key: str) -> tuple[ServerRuntime | None, dict[str, Any], str]:
-        runtime, error = self._resolve(self._query("server"))
+    def _target(
+        self, account_key: str, body: dict[str, Any]
+    ) -> tuple[ServerRuntime | None, dict[str, Any], str]:
+        server = self._query("server") or str(body.get("server") or "").strip()
+        if not account_key and not server:
+            return None, {}, "缺少服务器模板"
+        runtime, error = self._resolve(server)
         if runtime is None:
             return None, {}, error
-        by, value = self._split_account_key(account_key)
+        by, value = self._split_account_key(account_key or body.get("account_key", ""))
         if not value:
             return None, {}, "账号标识为空"
         if by == "uuid":
             return None, {}, "管理操作需要账号名或数字 id，请先按 UUID 查询详情"
         if by == "id":
             try:
-                return runtime, {"id": int(value)}, ""
+                account_id = int(value)
             except ValueError:
                 return None, {}, f"账号 id 不是合法整数：{value}"
+            if not 0 < account_id <= 2**63 - 1:
+                return None, {}, f"账号 id 超出范围：{value}"
+            return runtime, {"id": account_id}, ""
         return runtime, {"name": value}, ""
 
-    async def page_set_status(self, account_key: str):
-        runtime, target, error = await self._target(account_key)
+    async def page_set_status(self, account_key: str = ""):
+        body = await self._body()
+        runtime, target, error = self._target(account_key, body)
         if runtime is None:
             return error_response(error, status_code=400)
-        body = await self._body()
         status = str(body.get("status") or "").strip().lower()
         if status not in {"active", "locked"}:
             return error_response("status 仅支持 active / locked", status_code=400)
@@ -408,11 +420,11 @@ class VelocityAuthPageAPI:
             return error_response(self._admin_error(exc), status_code=400)
         return json_response(result)
 
-    async def page_reset_password(self, account_key: str):
-        runtime, target, error = await self._target(account_key)
+    async def page_reset_password(self, account_key: str = ""):
+        body = await self._body()
+        runtime, target, error = self._target(account_key, body)
         if runtime is None:
             return error_response(error, status_code=400)
-        body = await self._body()
         password = str(body.get("password") or "")
         if not password:
             return error_response("缺少新密码", status_code=400)
@@ -428,11 +440,11 @@ class VelocityAuthPageAPI:
             return error_response(self._admin_error(exc), status_code=400)
         return json_response(result)
 
-    async def page_kick(self, account_key: str):
-        runtime, target, error = await self._target(account_key)
+    async def page_kick(self, account_key: str = ""):
+        body = await self._body()
+        runtime, target, error = self._target(account_key, body)
         if runtime is None:
             return error_response(error, status_code=400)
-        body = await self._body()
         try:
             result = await self.manager.kick_account(
                 runtime,
@@ -445,11 +457,11 @@ class VelocityAuthPageAPI:
             return error_response(self._admin_error(exc), status_code=400)
         return json_response(result)
 
-    async def page_clear_session(self, account_key: str):
-        runtime, target, error = await self._target(account_key)
+    async def page_clear_session(self, account_key: str = ""):
+        body = await self._body()
+        runtime, target, error = self._target(account_key, body)
         if runtime is None:
             return error_response(error, status_code=400)
-        body = await self._body()
         try:
             result = await self.manager.clear_account_sessions(
                 runtime,
@@ -461,12 +473,12 @@ class VelocityAuthPageAPI:
             return error_response(self._admin_error(exc), status_code=400)
         return json_response(result)
 
-    async def page_remove_binding(self, account_key: str, provider: str):
-        runtime, target, error = await self._target(account_key)
+    async def page_remove_binding(self, account_key: str = "", provider: str = ""):
+        body = await self._body()
+        runtime, target, error = self._target(account_key, body)
         if runtime is None:
             return error_response(error, status_code=400)
-        body = await self._body()
-        provider_id = str(provider or "").strip().lower()
+        provider_id = str(provider or body.get("provider") or "").strip().lower()
         if not provider_id:
             return error_response("缺少 provider", status_code=400)
         try:
@@ -481,14 +493,16 @@ class VelocityAuthPageAPI:
             return error_response(self._admin_error(exc), status_code=400)
         return json_response(result)
 
-    async def page_delete_account(self, account_key: str):
-        runtime, target, error = await self._target(account_key)
+    async def page_delete_account(self, account_key: str = ""):
+        body = await self._body()
+        runtime, target, error = self._target(account_key, body)
         if runtime is None:
             return error_response(error, status_code=400)
-        body = await self._body()
         confirm = str(body.get("confirm_name") or "").strip()
         if not confirm:
-            return error_response("请在 confirm_name 中回填账号名以确认删除", status_code=400)
+            return error_response(
+                "请在 confirm_name 中回填账号名以确认删除", status_code=400
+            )
         try:
             result = await self.manager.delete_account(
                 runtime,
@@ -506,7 +520,7 @@ class VelocityAuthPageAPI:
     @staticmethod
     def _split_account_key(account_key: str) -> tuple[str, str]:
         """``id:12`` / ``uuid:...`` / ``alice`` → (查询方式, 值)。"""
-        raw = str(account_key or "").strip()
+        raw = account_key.strip() if isinstance(account_key, str) else ""
         if not raw:
             return "name", ""
         if ":" in raw:

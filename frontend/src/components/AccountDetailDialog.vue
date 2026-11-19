@@ -1,9 +1,15 @@
 <template>
-  <v-dialog v-model="open" max-width="720" scrollable>
+  <v-dialog
+    v-model="open"
+    aria-labelledby="account-detail-title"
+    max-width="720"
+    scrollable
+    :persistent="Boolean(busy)"
+  >
     <v-card>
       <v-card-title class="d-flex align-center ga-2">
         <v-icon icon="$account" size="20" />
-        <span>{{ account?.name || "账号详情" }}</span>
+        <span id="account-detail-title">{{ account?.name || "账号详情" }}</span>
         <v-chip
           v-if="account"
           size="small"
@@ -14,7 +20,14 @@
           {{ account.status_label }}
         </v-chip>
         <v-spacer />
-        <v-btn icon="$close" variant="text" size="small" @click="open = false" />
+        <v-btn
+          icon="$close"
+          aria-label="关闭账号详情"
+          variant="text"
+          size="small"
+          :disabled="Boolean(busy)"
+          @click="open = false"
+        />
       </v-card-title>
 
       <v-divider />
@@ -27,8 +40,20 @@
           variant="tonal"
           density="comfortable"
           :text="loadError"
-        />
+        >
+          <template #append>
+            <v-btn variant="text" @click="load">重试</v-btn>
+          </template>
+        </v-alert>
         <template v-else-if="account">
+          <v-alert
+            v-if="actionError && !confirmation"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+            :text="actionError"
+          />
           <v-row dense>
             <v-col cols="12" sm="6">
               <div class="field-label">ID</div>
@@ -76,7 +101,8 @@
                   size="small"
                   variant="text"
                   color="error"
-                  @click="confirmUnbind(binding)"
+                  :disabled="Boolean(busy)"
+                  @click="openConfirmation('bindings', binding)"
                 >
                   解绑
                 </v-btn>
@@ -89,7 +115,7 @@
             variant="tonal"
             density="compact"
             class="mt-3"
-            text="服务端未启用管理接口（bot.admin.enabled），当前为只读模式。"
+            text="当前服务器仅支持查看账号详情。"
           />
 
           <div class="section-label">身份</div>
@@ -114,6 +140,7 @@
                 variant="tonal"
                 :color="account.status === 'locked' ? 'success' : 'warning'"
                 :loading="busy === 'status'"
+                :disabled="Boolean(busy)"
                 @click="toggleStatus"
               >
                 {{ account.status === "locked" ? "解锁账号" : "锁定账号" }}
@@ -121,8 +148,8 @@
               <v-btn
                 prepend-icon="$password"
                 variant="tonal"
-                :loading="busy === 'password'"
-                @click="passwordDialog = true"
+                :disabled="Boolean(busy)"
+                @click="openConfirmation('password')"
               >
                 重置密码
               </v-btn>
@@ -131,15 +158,17 @@
                 variant="tonal"
                 color="warning"
                 :loading="busy === 'kick'"
-                @click="kick"
+                :disabled="Boolean(busy)"
+                @click="run('kick', { reason: '管理员已将会话踢出' }, '已踢出在线会话')"
               >
                 踢下线
               </v-btn>
               <v-btn
                 prepend-icon="$sessions"
                 variant="tonal"
-                :loading="busy === 'clear'"
-                @click="clearSession"
+                :loading="busy === 'clear-session'"
+                :disabled="Boolean(busy)"
+                @click="run('clear-session', {}, '已清除会话保持')"
               >
                 清除会话保持
               </v-btn>
@@ -147,8 +176,8 @@
                 prepend-icon="$error"
                 variant="tonal"
                 color="error"
-                :loading="busy === 'delete'"
-                @click="deleteDialog = true"
+                :disabled="Boolean(busy)"
+                @click="openConfirmation('delete')"
               >
                 删除账号
               </v-btn>
@@ -160,70 +189,73 @@
       <v-divider />
       <v-card-actions>
         <v-spacer />
-        <v-btn variant="text" @click="open = false">关闭</v-btn>
+        <v-btn variant="text" :disabled="Boolean(busy)" @click="open = false">关闭</v-btn>
       </v-card-actions>
     </v-card>
 
-    <!-- 重置密码 -->
-    <v-dialog v-model="passwordDialog" max-width="420" persistent>
+    <v-dialog
+      :model-value="Boolean(confirmation)"
+      aria-labelledby="account-confirmation-title"
+      max-width="420"
+      :persistent="Boolean(busy)"
+      @update:model-value="(visible) => !visible && closeConfirmation()"
+    >
       <v-card>
-        <v-card-title>重置密码</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="newPassword"
-            label="新密码"
-            type="password"
-            density="compact"
-            variant="outlined"
-            autofocus
-          />
-          <div class="subtle mt-2">该操作不会校验旧密码，并会写入审计日志。</div>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="passwordDialog = false">取消</v-btn>
-          <v-btn
-            color="primary"
-            :loading="busy === 'password'"
-            :disabled="!newPassword"
-            @click="resetPassword"
-          >
-            确认重置
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- 删除账号 -->
-    <v-dialog v-model="deleteDialog" max-width="420" persistent>
-      <v-card>
-        <v-card-title>删除账号</v-card-title>
+        <v-card-title id="account-confirmation-title">
+          {{ confirmationTitles[confirmation] }}
+        </v-card-title>
         <v-card-text>
           <v-alert
-            type="warning"
+            v-if="actionError"
+            type="error"
             variant="tonal"
             density="compact"
             class="mb-3"
-            text="删除后无法恢复，绑定历史会保留。请输入账号名确认。"
+            :text="actionError"
           />
           <v-text-field
-            v-model="confirmName"
-            :label="`输入 ${account?.name || ''} 以确认`"
+            v-if="confirmation === 'password'"
+            v-model="newPassword"
+            label="新密码"
+            type="password"
+            autocomplete="new-password"
             density="compact"
             variant="outlined"
+            :disabled="Boolean(busy)"
             autofocus
           />
+          <template v-else-if="confirmation === 'delete'">
+            <v-alert
+              type="warning"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+              text="删除后无法恢复，绑定历史会保留。请输入账号名确认。"
+            />
+            <v-text-field
+              v-model="confirmName"
+              :label="`输入 ${account?.name || ''} 以确认`"
+              density="compact"
+              variant="outlined"
+              :disabled="Boolean(busy)"
+              autofocus
+            />
+          </template>
+          <p v-else-if="bindingToRemove" class="binding-confirmation">
+            确认解绑 {{ bindingToRemove.provider }} 的账号 {{ bindingToRemove.identifier }}？
+          </p>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn variant="text" @click="deleteDialog = false">取消</v-btn>
+          <v-btn variant="text" :disabled="Boolean(busy)" @click="closeConfirmation">取消</v-btn>
           <v-btn
-            color="error"
-            :loading="busy === 'delete'"
-            :disabled="confirmName !== (account?.name || '')"
-            @click="deleteAccount"
+            :color="confirmation === 'password' ? 'primary' : 'error'"
+            variant="tonal"
+            :loading="Boolean(busy)"
+            :disabled="Boolean(busy) || !canConfirm"
+            @click="submitConfirmation"
           >
-            确认删除
+            {{ confirmationButtons[confirmation] }}
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -233,7 +265,7 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
-import { apiDelete, apiGet, apiPost } from "../api";
+import { apiGet, apiPost } from "../api";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -242,17 +274,29 @@ const props = defineProps({
   canAdmin: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:modelValue", "changed", "error", "toast"]);
+const emit = defineEmits(["update:modelValue", "changed", "toast"]);
 
 const loading = ref(false);
 const loadError = ref("");
+const actionError = ref("");
 const account = ref(null);
 const busy = ref("");
+let requestId = 0;
 
-const passwordDialog = ref(false);
+const confirmation = ref("");
+const bindingToRemove = ref(null);
 const newPassword = ref("");
-const deleteDialog = ref(false);
 const confirmName = ref("");
+
+const confirmationTitles = { password: "重置密码", delete: "删除账号", bindings: "解绑渠道" };
+const confirmationButtons = { password: "确认重置", delete: "确认删除", bindings: "确认解绑" };
+const canConfirm = computed(() => {
+  if (confirmation.value === "password") return Boolean(newPassword.value);
+  if (confirmation.value === "delete") {
+    return Boolean(account.value?.name) && confirmName.value === account.value.name;
+  }
+  return Boolean(bindingToRemove.value);
+});
 
 const open = computed({
   get: () => props.modelValue,
@@ -269,130 +313,101 @@ const statusColor = computed(() => {
   );
 });
 
-const keyPath = computed(() => encodeURIComponent(props.accountKey || ""));
-
 async function load() {
-  if (!props.accountKey) {
+  if (!open.value || !props.accountKey) {
     return;
   }
+  const currentRequest = ++requestId;
+  account.value = null;
   loading.value = true;
   loadError.value = "";
   try {
-    const result = await apiGet(`page/accounts/${keyPath.value}`, {
+    const result = await apiGet("page/account", {
+      account_key: props.accountKey,
       server: props.server,
     });
-    account.value = result.account || null;
+    if (currentRequest === requestId) {
+      account.value = result.account || null;
+      if (!account.value) loadError.value = "未找到该账号";
+    }
   } catch (error) {
-    loadError.value = error?.message || "加载账号详情失败";
+    if (currentRequest === requestId) {
+      loadError.value = error?.message || "加载账号详情失败";
+    }
   } finally {
-    loading.value = false;
+    if (currentRequest === requestId) loading.value = false;
   }
 }
 
-async function run(kind, action, successText = "操作成功") {
+async function run(kind, fields, successText) {
+  if (busy.value || !props.canAdmin || !account.value) return;
+  const { id, name } = account.value;
+  const accountKey = Number.isSafeInteger(id) && id > 0 ? `id:${id}` : `name:${name}`;
+  actionError.value = "";
   busy.value = kind;
   try {
-    await action();
-    await load();
+    await apiPost(`page/account/${kind}`, {
+      ...fields,
+      account_key: accountKey,
+      server: props.server,
+    });
+    closeConfirmation();
     emit("changed");
     emit("toast", successText);
-    return true;
+    if (kind === "delete") {
+      open.value = false;
+    } else {
+      await load();
+    }
   } catch (error) {
-    emit("error", error?.message || "操作失败");
-    return false;
+    actionError.value = error?.message || "操作失败";
   } finally {
     busy.value = "";
   }
 }
 
 function toggleStatus() {
-  const next = account.value?.status === "locked" ? "active" : "locked";
-  run(
-    "status",
-    () =>
-      apiPost(`page/accounts/${keyPath.value}/status`, {
-        status: next,
-        server: props.server,
-      }),
-    next === "locked" ? "账号已锁定" : "账号已解锁",
-  );
+  const status = account.value?.status === "locked" ? "active" : "locked";
+  run("status", { status }, status === "locked" ? "账号已锁定" : "账号已解锁");
 }
 
-function resetPassword() {
-  run(
-    "password",
-    async () => {
-      await apiPost(`page/accounts/${keyPath.value}/password`, {
-        password: newPassword.value,
-        server: props.server,
-      });
-      passwordDialog.value = false;
-      newPassword.value = "";
-    },
-    "密码已重置",
-  );
+function openConfirmation(kind, binding = null) {
+  closeConfirmation();
+  bindingToRemove.value = binding;
+  confirmation.value = kind;
 }
 
-function kick() {
-  run(
-    "kick",
-    () =>
-      apiPost(`page/accounts/${keyPath.value}/kick`, {
-        reason: "管理员已将会话踢出",
-        server: props.server,
-      }),
-    "已踢出在线会话",
-  );
+function closeConfirmation() {
+  confirmation.value = "";
+  bindingToRemove.value = null;
+  newPassword.value = "";
+  confirmName.value = "";
+  actionError.value = "";
 }
 
-function clearSession() {
-  run(
-    "clear",
-    () =>
-      apiPost(`page/accounts/${keyPath.value}/clear-session`, {
-        server: props.server,
-      }),
-    "已清除会话保持",
-  );
-}
-
-function deleteAccount() {
-  run(
-    "delete",
-    async () => {
-      await apiPost(`page/accounts/${keyPath.value}/delete`, {
-        confirm_name: confirmName.value,
-        server: props.server,
-      });
-      deleteDialog.value = false;
-      confirmName.value = "";
-      open.value = false;
-    },
-    "账号已删除",
-  );
-}
-
-function confirmUnbind(binding) {
-  const provider = binding.provider;
-  if (!window.confirm(`确认解绑 ${provider}: ${binding.identifier}？`)) {
-    return;
+function submitConfirmation() {
+  if (!canConfirm.value) return;
+  if (confirmation.value === "password") {
+    run("password", { password: newPassword.value }, "密码已重置");
+  } else if (confirmation.value === "delete") {
+    run("delete", { confirm_name: confirmName.value }, "账号已删除");
+  } else {
+    const { provider } = bindingToRemove.value;
+    run("bindings", { provider }, `已解绑 ${provider}`);
   }
-  run(
-    `unbind:${provider}`,
-    () =>
-      apiPost(
-        `page/accounts/${keyPath.value}/bindings/${encodeURIComponent(provider)}`,
-        { server: props.server },
-      ),
-    `已解绑 ${provider}`,
-  );
 }
 
 watch(
-  () => [props.modelValue, props.accountKey],
+  [open, () => props.accountKey, () => props.server],
   () => {
-    if (props.modelValue) {
+    requestId += 1;
+    closeConfirmation();
+    if (open.value) {
       load();
+    } else {
+      account.value = null;
+      loadError.value = "";
+      loading.value = false;
     }
   },
   { immediate: true },
@@ -409,6 +424,7 @@ watch(
 .field-value {
   font-size: 0.88rem;
   margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
 
 .section-label {
@@ -425,6 +441,10 @@ watch(
 .binding-provider {
   font-weight: 600;
   margin-right: 8px;
+}
+
+.binding-confirmation {
+  overflow-wrap: anywhere;
 }
 
 .loading-row {

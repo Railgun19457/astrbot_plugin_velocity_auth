@@ -8,7 +8,7 @@
 let cachedBridge = null;
 
 function createDevFallbackBridge() {
-  const apiBase = "/api/plugin/astrbot_plugin_velocity_auth/";
+  const apiBase = "/api/plug/astrbot_plugin_velocity_auth/";
 
   const parse = async (response) => {
     if (!response.ok) {
@@ -49,15 +49,6 @@ function createDevFallbackBridge() {
           body: JSON.stringify(body),
         }),
       ),
-    apiDelete: async (endpoint, body = {}) =>
-      parse(
-        await fetch(`${apiBase}${endpoint}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify(body),
-        }),
-      ),
     subscribeSSE: async () => "",
     unsubscribeSSE: async () => undefined,
   };
@@ -90,12 +81,4 @@ export async function waitForBridge() {
     // ready() 失败只说明 dashboard 没及时应答，不影响后续调用
   }
   return bridge;
-}
-
-/** 若 SDK 在 fallback 之后才注入，重新取一次。 */
-export function refreshBridge() {
-  if (window.AstrBotPluginView) {
-    cachedBridge = window.AstrBotPluginView;
-  }
-  return getBridge();
 }

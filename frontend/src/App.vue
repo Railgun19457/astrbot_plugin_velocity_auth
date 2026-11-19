@@ -82,7 +82,7 @@
           text="尚未配置任何服务器模板，请先在插件配置里添加 servers 条目。"
         />
 
-        <v-window v-model="tab" class="page-window">
+        <v-window v-if="selectedServer" :key="selectedServer" v-model="tab" class="page-window">
           <v-window-item value="overview">
             <OverviewView :server="selectedServer" :refresh-key="refreshKey" @error="notify" />
           </v-window-item>
@@ -110,7 +110,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { waitForBridge } from "./bridge";
 import { apiGet } from "./api";
 import { isDark, syncContext, t } from "./i18n";
@@ -139,7 +139,7 @@ const serverOptions = computed(() =>
 
 const currentServer = computed(() => {
   const servers = pluginState.value?.servers || [];
-  return servers.find((server) => server.name === selectedServer.value) || servers[0] || null;
+  return servers.find((server) => server.name === selectedServer.value) || null;
 });
 
 function notify(message, color = "error") {
@@ -156,8 +156,8 @@ async function loadState() {
   loadError.value = "";
   try {
     pluginState.value = await apiGet("page/state");
-    if (!selectedServer.value) {
-      selectedServer.value = pluginState.value?.default_server || "";
+    if (!serverOptions.value.some((server) => server.value === selectedServer.value)) {
+      selectedServer.value = pluginState.value?.default_server || serverOptions.value[0]?.value || "";
     }
   } catch (error) {
     loadError.value = error?.message || "加载插件状态失败";
@@ -170,13 +170,6 @@ async function reloadAll() {
   await loadState();
   refreshKey.value += 1;
 }
-
-watch(
-  () => selectedServer.value,
-  () => {
-    refreshKey.value += 1;
-  },
-);
 
 onMounted(async () => {
   const bridge = await waitForBridge();
