@@ -78,6 +78,10 @@
               <div class="field-label">上次子服</div>
               <div class="field-value">{{ account.last_server || "-" }}</div>
             </v-col>
+            <v-col v-if="account.online_time_text" cols="12" sm="6">
+              <div class="field-label">累计在线</div>
+              <div class="field-value">{{ account.online_time_text }}</div>
+            </v-col>
           </v-row>
 
           <div class="section-label">渠道绑定</div>

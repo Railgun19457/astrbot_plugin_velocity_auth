@@ -267,6 +267,9 @@ class TypstRenderer:
             {"label": "最近 IP", "value": account.last_ip or "-"},
             {"label": "上次所在服", "value": account.last_server or "-"},
         ]
+        online_time = account.online_time_text
+        if online_time is not None:
+            rows.append({"label": "累计在线", "value": online_time})
         sections: list[dict] = [{"title": "账号信息", "rows": rows}]
 
         binding_rows = [
@@ -392,6 +395,9 @@ class TypstRenderer:
             f"最近 IP：{account.last_ip or '-'}",
             f"上次所在服：{account.last_server or '-'}",
         ]
+        online_time = account.online_time_text
+        if online_time is not None:
+            lines.append(f"累计在线：{online_time}")
         if source:
             lines.append(f"来源：{source}")
         if account.bindings:

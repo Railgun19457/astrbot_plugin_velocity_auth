@@ -146,6 +146,7 @@ class AccountView:
     last_login_at: int = 0
     bindings: list[BindingView] = field(default_factory=list)
     identities: list[IdentityView] = field(default_factory=list)
+    online_seconds: int | None = None
 
     @property
     def status_label(self) -> str:
@@ -158,6 +159,19 @@ class AccountView:
     @property
     def last_login_text(self) -> str:
         return format_time(self.last_login_at)
+
+    @property
+    def online_time_text(self) -> str | None:
+        if self.online_seconds is None:
+            return None
+        days, seconds = divmod(self.online_seconds, 86400)
+        hours, seconds = divmod(seconds, 3600)
+        minutes, seconds = divmod(seconds, 60)
+        return " ".join(
+            f"{amount} {unit}"
+            for amount, unit in [(days, "天"), (hours, "小时"), (minutes, "分"), (seconds, "秒")]
+            if amount
+        ) or "0 秒"
 
 
 @dataclass(slots=True)
@@ -288,6 +302,9 @@ def parse_account(payload: dict[str, Any]) -> AccountView:
         last_login_at=as_int("last_login_at"),
         bindings=bindings,
         identities=identities,
+        online_seconds=(
+            max(0, as_int("online_seconds")) if text.get("online_seconds") else None
+        ),
     )
 
 

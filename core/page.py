@@ -272,6 +272,8 @@ class VelocityAuthPageAPI:
                     "created_text": account.created_text,
                     "last_login_at": account.last_login_at,
                     "last_login_text": account.last_login_text,
+                    "online_seconds": account.online_seconds,
+                    "online_time_text": account.online_time_text,
                     "bindings": [
                         {
                             "provider": binding.provider,
